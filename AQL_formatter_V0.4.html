@@ -1,0 +1,258 @@
+<!--
+Author: Martin Koch
+(c) 2025 CatSalut
+License Apache 2.0
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AQL formatter</title>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      margin: auto;
+      max-width: 1200px;
+    }
+
+    h1{
+      padding:0;
+      margin: 0;
+      margin-bottom: 10px;
+      font-size: 20pt;
+    }
+    .section {
+      margin-bottom: 10px;
+    }
+
+    textarea, .highlighted {
+      width: 100%;
+      min-height: 300px;
+      font-family: monospace;
+      font-size: 14px;
+      border: 1px solid #ccc;
+      padding: 10px;
+      box-sizing: border-box;
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+      overflow: auto;
+    }
+
+    .highlighted {
+      background-color: #f9f9f9;
+      color: #333;
+      min-height: 100px;
+    }
+
+    #outputBox {
+      /*display: none;*/
+      box-sizing: border-box;
+      white-space: pre-wrap;
+      font-size: 10pt;
+      overflow-wrap: break-word;
+      overflow: auto;
+      min-height: 0pt;
+    }
+
+    .keyword {
+      color: blue;
+      font-weight: bold;
+    }
+    .datatype_keyword {
+      color: red;
+      font-weight: bold;
+    }
+    .green_keyword {
+      color: green;
+      font-weight: bold;
+    }
+    .parameter_keyword {
+      color: orange;
+      font-weight: bold;
+    }
+
+    .comment {
+      color:gray;
+      font-style: italic;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 14px;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+    #info{
+      font-size: 8pt;
+    }
+  </style>
+</head>
+<body>
+  <h1>AQL formatter</h1>
+  <p id="info">&#169 2025 CatSalut. Servei Català de la Salut, Licensed under <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank">Apache 2.0</a></p>
+  <div class="section">
+    <button onclick="autoFormat()">🤖 Auto-Format Input</button>
+    <button onclick="copyOutput()">📋 Copy Cleaned AQL to Clipboard</button>
+    <button onclick="downloadHighlightAsImage()">📸 Download Formatted AQL as Image</button>
+  </div>
+
+  <div class="section">
+    <label><strong>Input:</strong></label>
+    <textarea id="inputBox" oninput="updateText()" onkeydown="handleTab(event)" placeholder="Type your AQL query here..."></textarea>
+  </div>
+
+  <div class="section">
+    <label><strong>Formatted AQL:</strong></label>
+    <div id="highlightBox" class="highlighted"></div>
+  </div>
+
+  <label><strong>Cleaned AQL:</strong></label>
+  <textarea id="outputBox" readonly></textarea>
+ 
+
+<script>
+  const keywords = ['SELECT',  'FROM', 'CONTAINS', 'WHERE', 'ORDER BY', 'LIMIT', 'OFFSET', 'NOT', 'LIKE', 'matches', 'exists', '<', '>', '=', '!', 'true', 'false', 'NULL'];
+  const datatype_keywords = ['VERSION','EHR', 'CONTENT_ITEM', 'ENTRY', 'CARE_ENTRY', 'EVENT', 'ITEM_STRUCTURE', 'ITEM', 'COMPOSITION', 'FOLDER', 'EHR_STATUS', 'EVENT_CONTEXT', 'SECTION', 'GENERIC_ENTRY', 'ADMIN_ENTRY', 'OBSERVATION', 'INSTRUCTION', 'ACTION', 'EVALUATION', 'ACTIVITY', 'HISTORY', 'POINT_EVENT', 'INTERVAL_EVENT', 'FEEDER_AUDIT', 'ITEM_LIST', 'ITEM_SINGLE', 'ITEM_TABLE', 'ITEM_TREE', 'CLUSTER', 'ELEMENT'];
+  const green_keywords = ['DESC','ASC','AS','DISTINCT', 'AND', 'OR']
+  const inputBox = document.getElementById('inputBox');
+  const outputBox = document.getElementById('outputBox');
+  const highlightBox = document.getElementById('highlightBox');
+
+  addStandardStructure();
+  
+  function updateText() {
+    const rawText = inputBox.value;
+
+    /* Cleaned output: remove multiple spaces, tabs, line breaks
+    const cleanedText = rawText.replace(/\s+/g, ' ').trim();
+    outputBox.value = cleanedText;
+    */
+
+    const cleanedText = rawText
+      .replace(/\/\/.*$/gm, '')      // Remove '//' comments
+      .replace(/\s+/g, ' ')          // Collapse multiple spaces/tabs/newlines
+      .trim();                       // Trim start/end
+
+    outputBox.value = cleanedText;
+
+    // Escape HTML
+    let highlightedText = rawText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    // Highlight main keywords
+    keywords.forEach(kw => {
+      const regex = new RegExp(`\\b(${kw})\\b`, 'gi');
+      highlightedText = highlightedText.replace(regex, '<span class="keyword">$1</span>');
+    });
+	
+	// Highlight data type keywords
+    datatype_keywords.forEach(kw => {
+      //const regex = new RegExp(`\\b(${dtkw})\\b`, 'gi');
+      const regex =new RegExp(`(?<![\\w-])(${kw})(?![\\w-])`, 'gi');
+      highlightedText = highlightedText.replace(regex, '<span class="datatype_keyword">$1</span>');
+    });
+    
+    // Highlight other keywords
+    green_keywords.forEach(kw => {
+      //const regex = new RegExp(`\\b(${dtkw})\\b`, 'gi');
+      const regex =new RegExp(`(?<![\\w-$])(${kw})(?![\\w-])`, 'gi');
+      highlightedText = highlightedText.replace(regex, '<span class="green_keyword">$1</span>');
+    });
+
+    // Highlight parameter keywords
+    let regex =new RegExp('(\\$[a-zA-Z_][a-zA-Z0-9_]*)', 'gm');
+    //highlightedText = highlightedText.replace(regex, '<span class="parameter_keyword">$1</span>');
+    highlightedText = highlightedText.replace(regex, (_, comment) => {
+      // Remove any <span> tags inside the comment before wrapping
+      const cleanedComment = comment.replace(/<\/?span[^>]*>/gi, '');
+      console.log(cleanedComment);
+      return `<span class="parameter_keyword">${cleanedComment}</span>`;
+    });
+    
+    
+    // Highlight comment
+    regex = new RegExp('(\/\/.*$)', 'gm');
+    //highlightedText = highlightedText.replace(regex, '<span class="comment">$1</span>');
+    highlightedText = highlightedText.replace(regex, (_, comment) => {
+      // Remove any <span> tags inside the comment before wrapping
+      const cleanedComment = comment.replace(/<\/?span[^>]*>/gi, '');
+      return `<span class="comment">${cleanedComment}</span>`;
+    });
+    
+    // Replace tabs and line breaks for proper display
+    highlightedText = highlightedText
+      .replace(/\n/g, '<br>')
+      .replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;');
+
+    highlightBox.innerHTML = highlightedText;
+  }
+
+  function handleTab(event) {
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      const start = inputBox.selectionStart;
+      const end = inputBox.selectionEnd;
+
+      inputBox.value = inputBox.value.substring(0, start) + '\t' + inputBox.value.substring(end);
+      inputBox.selectionStart = inputBox.selectionEnd = start + 1;
+
+      updateText();
+    }
+  }
+
+  function addStandardStructure(){
+    inputBox.value='//This is an example of an AQL \nSELECT\n\te/ehr_id/value AS ehr_id,\t\t//patient ID\n\tc/uid/value AS cuid\t\t\t//composition ID\nFROM\n\tEHR e\n\t\tCONTAINS\n\t\t\tCOMPOSITION c\nWHERE\n\tc/archetype_details/template_id/value=$template_id\nLIMIT\n\t1';
+    updateText();
+    //autoFormat();
+  }
+
+  function copyOutput() {
+    navigator.clipboard.writeText(outputBox.value)
+      .then(() => alert("Cleaned AQL copied to clipboard!"))
+      .catch(() => alert("Failed to copy."));
+  }
+
+  function downloadHighlightAsImage() {
+    // Temporarily expand to fit all content
+    const originalHeight = highlightBox.style.height;
+    highlightBox.style.height = 'auto';
+
+    html2canvas(highlightBox, {
+      useCORS: true,
+      scale: 2, // higher scale for better quality
+      windowWidth: highlightBox.scrollWidth,
+      windowHeight: highlightBox.scrollHeight
+    }).then(canvas => {
+      const link = document.createElement('a');
+      link.download = 'formatted_aql.png';
+      link.href = canvas.toDataURL();
+      link.click();
+
+      // Reset style
+      highlightBox.style.height = originalHeight;
+    });
+  }
+
+  function autoFormat() {
+    let rawText = inputBox.value;
+    rawText= rawText.replace(/\s+/g, ' ').trim();
+
+    // Add line breaks before and after whole keywords
+    const formatted = rawText.replace(
+      new RegExp(`\\b(${keywords.join('|')})\\b`, 'gi'),
+      '\n$1\n\t'
+    );
+    // Remove multiple blank lines caused by formatting
+    const cleaned = formatted.replace(/\n{2,}/g, '\n');
+
+    inputBox.value = cleaned.trim();
+    updateText();
+}
+
+
+
+</script>
+
+</body>
+</html>
